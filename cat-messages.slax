@@ -1,0 +1,71 @@
+/*
+ * Title               : cat-messages
+ * Last modified date  : 11.12.2019
+ * Author              : jumation.com
+ * Description         : Shows the content of all the files in /var/log
+ *                       directory matching the messages* pattern.
+ * Options             :
+ * Notes               : Requires Junos 12.2 or newer.
+ *                       While it might be tempting to use "zcat -f
+ *                       /var/log/messages*" using <request-shell-execute>
+ *                       RPC, then in this case all the log messages are a
+ *                       single text node in <output></output> element node
+ *                       and the script can fail with "xmlSAX2Characters: huge
+ *                       text node" in case there are tens of thousands of
+ *                       log messages. This should be the security restriction
+ *                       of libxml2.
+ */
+
+version 1.1;
+
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+
+import "../import/junos.xsl";
+
+
+
+match / {
+	<op-script-results> {
+
+		var $con = jcs:open();
+
+		if (not($con)) {
+			<output> "Unable to connect to local mgd";
+			terminate;
+		}
+
+
+		var $filelist_rpc = {
+			<file-list> {
+				<path> "/var/log/messages*";
+			}
+		}
+		var $filelist = jcs:execute($con, $filelist_rpc);
+
+		if ( $filelist/../xnm:error ) {
+			copy-of $filelist;
+			terminate;
+		}
+
+		for-each($filelist/directory/file-information/file-name) {
+
+			var $fileshow_rpc = {
+				<file-show> {
+					<filename> .;
+				}
+			}
+			var $fileshow = jcs:execute($con, $fileshow_rpc);
+
+			if ( $fileshow/../xnm:error ) {
+				copy-of $fileshow;
+				terminate;
+			}
+
+			expr jcs:output($fileshow);
+
+		}
+		expr jcs:close($con);
+	}
+}
